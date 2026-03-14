@@ -22,5 +22,7 @@ namespace TrackableEntities.EF.Core.Tests.FamilyModels
         public TrackingState TrackingState { get; set; }
         [NotMapped]
         public ICollection<string> ModifiedProperties { get; set; }
+        [NotMapped]
+        public IDictionary<string, object> OriginalValues { get; set; }
     }
 }

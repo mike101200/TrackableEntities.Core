@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -1986,6 +1986,247 @@ namespace TrackableEntities.EF.Core.Tests
             // Assert
             Assert.DoesNotContain(context.GetModifiedProperties(order), p => p?.Count > 0);
             Assert.DoesNotContain(context.GetModifiedProperties(order.Customer), p => p?.Count > 0);
+        }
+
+        #endregion
+
+        #region OriginalValues Tests
+
+        [Fact]
+        public void OriginalValues_Should_Store_Original_Value_For_Modified_Property()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            var originalPrice = product.UnitPrice;
+            
+            // Act - Set original value and modify property
+            product.SetOriginalValue(nameof(Product.UnitPrice), originalPrice);
+            product.UnitPrice = 99.99m;
+            product.ModifiedProperties = new List<string> { nameof(Product.UnitPrice) };
+            
+            // Assert
+            Assert.NotNull(product.OriginalValues);
+            Assert.Contains(nameof(Product.UnitPrice), product.OriginalValues.Keys);
+            Assert.Equal(originalPrice, product.OriginalValues[nameof(Product.UnitPrice)]);
+        }
+
+        [Fact]
+        public void GetOriginalValue_Should_Return_Correct_Value()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            var originalPrice = product.UnitPrice;
+            
+            // Act
+            product.SetOriginalValue(nameof(Product.UnitPrice), originalPrice);
+            product.UnitPrice = 99.99m;
+            
+            // Assert
+            bool exists = product.GetOriginalValue<decimal>(nameof(Product.UnitPrice), out var retrievedValue);
+            Assert.True(exists);
+            Assert.Equal(originalPrice, retrievedValue);
+        }
+
+        [Fact]
+        public void GetPropertyChanges_Should_Return_All_Changes()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            var originalPrice = product.UnitPrice;
+            var originalName = product.ProductName;
+            
+            // Act
+            product.SetOriginalValue(nameof(Product.UnitPrice), originalPrice);
+            product.SetOriginalValue(nameof(Product.ProductName), originalName);
+            product.UnitPrice = 99.99m;
+            product.ProductName = "New Name";
+            product.ModifiedProperties = new List<string> { nameof(Product.UnitPrice), nameof(Product.ProductName) };
+            
+            // Assert
+            var changes = product.GetPropertyChanges();
+            Assert.Equal(2, changes.Count);
+            
+            var priceChange = changes[nameof(Product.UnitPrice)];
+            Assert.Equal(originalPrice, priceChange.OriginalValue);
+            Assert.Equal(99.99m, priceChange.CurrentValue);
+            
+            var nameChange = changes[nameof(Product.ProductName)];
+            Assert.Equal(originalName, nameChange.OriginalValue);
+            Assert.Equal("New Name", nameChange.CurrentValue);
+        }
+
+        [Fact]
+        public void GetPropertyChanges_Should_Return_Empty_When_No_ModifiedProperties()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            
+            // Act
+            product.SetOriginalValue(nameof(Product.UnitPrice), 10.00m);
+            product.UnitPrice = 99.99m;
+            // Note: ModifiedProperties is null
+            
+            // Assert
+            var changes = product.GetPropertyChanges();
+            Assert.Empty(changes);
+        }
+
+        [Fact]
+        public void OriginalValues_Should_Be_Applied_To_EF_Change_Tracker()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            var originalPrice = product.UnitPrice;
+            
+            // Act
+            product.SetOriginalValue(nameof(Product.UnitPrice), originalPrice);
+            product.UnitPrice = 99.99m;
+            product.ModifiedProperties = new List<string> { nameof(Product.UnitPrice) };
+            product.TrackingState = TrackingState.Modified;
+            
+            var context = _fixture.GetContext();
+            context.ApplyChanges(product);
+            
+            // Assert
+            var entry = context.Entry(product);
+            Assert.Equal(EntityState.Modified, entry.State);
+            Assert.True(entry.Property(nameof(Product.UnitPrice)).IsModified);
+            Assert.Equal(originalPrice, entry.Property(nameof(Product.UnitPrice)).OriginalValue);
+            Assert.Equal(99.99m, entry.Property(nameof(Product.UnitPrice)).CurrentValue);
+        }
+
+        [Fact]
+        public void OriginalValues_Should_Be_Applied_Only_For_Modified_Properties()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            var originalPrice = product.UnitPrice;
+            var originalName = product.ProductName;
+            
+            // Act
+            product.SetOriginalValue(nameof(Product.UnitPrice), originalPrice);
+            product.SetOriginalValue(nameof(Product.ProductName), originalName);
+            product.UnitPrice = 99.99m;
+            product.ProductName = "New Name";
+            product.ModifiedProperties = new List<string> { nameof(Product.UnitPrice) }; // Only UnitPrice is modified
+            product.TrackingState = TrackingState.Modified;
+            
+            var context = _fixture.GetContext();
+            context.ApplyChanges(product);
+            
+            // Assert
+            var entry = context.Entry(product);
+            Assert.True(entry.Property(nameof(Product.UnitPrice)).IsModified);
+            Assert.Equal(originalPrice, entry.Property(nameof(Product.UnitPrice)).OriginalValue);
+            
+            Assert.False(entry.Property(nameof(Product.ProductName)).IsModified);
+            // For non-modified properties, EF Core sets OriginalValue to CurrentValue
+            Assert.Equal("New Name", entry.Property(nameof(Product.ProductName)).OriginalValue);
+        }
+
+        [Fact]
+        public void AcceptChanges_Should_Clear_OriginalValues()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            product.SetOriginalValue(nameof(Product.UnitPrice), 10.00m);
+            product.ModifiedProperties = new List<string> { nameof(Product.UnitPrice) };
+            product.TrackingState = TrackingState.Modified;
+            
+            // Act
+            var context = _fixture.GetContext();
+            context.ApplyChanges(product);
+            context.AcceptChanges(product);
+            
+            // Assert
+            Assert.Null(product.OriginalValues);
+            Assert.Null(product.ModifiedProperties);
+            Assert.Equal(TrackingState.Unchanged, product.TrackingState);
+        }
+
+        [Fact]
+        public void OriginalValues_Should_Work_With_Object_Graph()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var order = northwind.Orders[0];
+            var originalOrderDate = order.OrderDate;
+            var originalCustomerName = order.Customer.CustomerName;
+            
+            // Act
+            order.SetOriginalValue(nameof(Order.OrderDate), originalOrderDate);
+            order.Customer.SetOriginalValue(nameof(Customer.CustomerName), originalCustomerName);
+            order.OrderDate = DateTime.Now;
+            order.Customer.CustomerName = "New Customer Name";
+            order.ModifiedProperties = new List<string> { nameof(Order.OrderDate) };
+            order.Customer.ModifiedProperties = new List<string> { nameof(Customer.CustomerName) };
+            order.TrackingState = TrackingState.Modified;
+            order.Customer.TrackingState = TrackingState.Modified;
+            
+            var context = _fixture.GetContext();
+            context.ApplyChanges(order);
+            
+            // Assert
+            var orderEntry = context.Entry(order);
+            Assert.Equal(originalOrderDate, orderEntry.Property(nameof(Order.OrderDate)).OriginalValue);
+            
+            var customerEntry = context.Entry(order.Customer);
+            Assert.Equal(originalCustomerName, customerEntry.Property(nameof(Customer.CustomerName)).OriginalValue);
+        }
+
+        [Fact]
+        public void OriginalValues_Should_Work_With_Nullable_Types()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var product = northwind.Products[0];
+            product.Discontinued = false;
+            
+            // Act
+            product.SetOriginalValue(nameof(Product.Discontinued), false);
+            product.Discontinued = true;
+            product.ModifiedProperties = new List<string> { nameof(Product.Discontinued) };
+            product.TrackingState = TrackingState.Modified;
+            
+            var context = _fixture.GetContext();
+            context.ApplyChanges(product);
+            
+            // Assert
+            var entry = context.Entry(product);
+            Assert.True(entry.Property(nameof(Product.Discontinued)).IsModified);
+            Assert.False((bool)entry.Property(nameof(Product.Discontinued)).OriginalValue);
+            Assert.True((bool)entry.Property(nameof(Product.Discontinued)).CurrentValue);
+        }
+
+        [Fact]
+        public void OriginalValues_Should_Work_With_String_Types()
+        {
+            // Arrange
+            var northwind = new MockNorthwind();
+            var customer = northwind.Customers[0];
+            var originalName = customer.CustomerName;
+            
+            // Act
+            customer.SetOriginalValue(nameof(Customer.CustomerName), originalName);
+            customer.CustomerName = "New Customer Name";
+            customer.ModifiedProperties = new List<string> { nameof(Customer.CustomerName) };
+            customer.TrackingState = TrackingState.Modified;
+            
+            var context = _fixture.GetContext();
+            context.ApplyChanges(customer);
+            
+            // Assert
+            var entry = context.Entry(customer);
+            Assert.True(entry.Property(nameof(Customer.CustomerName)).IsModified);
+            Assert.Equal(originalName, entry.Property(nameof(Customer.CustomerName)).OriginalValue);
+            Assert.Equal("New Customer Name", entry.Property(nameof(Customer.CustomerName)).CurrentValue);
         }
 
         #endregion

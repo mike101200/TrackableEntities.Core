@@ -201,7 +201,16 @@ namespace TrackableEntities.EF.Core
                     if (trackable.TrackingState != TrackingState.Unchanged)
                         trackable.TrackingState = TrackingState.Unchanged;
                     if (trackable.ModifiedProperties?.Count > 0)
+                    {
                         trackable.ModifiedProperties.Clear();
+                        trackable.ModifiedProperties = null;
+                    }
+                    // Clear original values
+                    if (trackable.OriginalValues?.Count > 0)
+                    {
+                        trackable.OriginalValues.Clear();
+                        trackable.OriginalValues = null;
+                    }
                 }
             });
         }
@@ -223,13 +232,27 @@ namespace TrackableEntities.EF.Core
             // Set entity state to tracking state
             entry.State = state;
 
-            // Set modified properties
+            // Set modified properties and original values
             if (entry.State == EntityState.Modified
                 && trackable.ModifiedProperties != null)
             {
                 foreach (var property in entry.Properties)
-                    property.IsModified = trackable.ModifiedProperties.Any(p =>
-                        string.Compare(p, property.Metadata.Name, StringComparison.InvariantCultureIgnoreCase) == 0);
+                {
+                    var propertyName = property.Metadata.Name;
+                    var isModified = trackable.ModifiedProperties.Any(p =>
+                        string.Compare(p, propertyName, StringComparison.InvariantCultureIgnoreCase) == 0);
+
+                    property.IsModified = isModified;
+
+                    // Apply original value if available
+                    if (isModified && trackable.OriginalValues != null)
+                    {
+                        if (trackable.OriginalValues.TryGetValue(propertyName, out var originalValue))
+                        {
+                            property.OriginalValue = originalValue;
+                        }
+                    }
+                }
             }
         }
     }

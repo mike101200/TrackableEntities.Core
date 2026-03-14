@@ -16,5 +16,10 @@ namespace TrackableEntities.Common.Core
         /// Properties on an entity that have been modified.
         /// </summary>
         ICollection<string> ModifiedProperties { get; set; }
+
+        /// <summary>
+        /// Original values of modified properties, enabling change comparison and diffing.
+        /// </summary>
+        IDictionary<string, object> OriginalValues { get; set; }
     }
 }

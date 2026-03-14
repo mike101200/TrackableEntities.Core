@@ -17,5 +17,7 @@ namespace TrackableEntities.EF.Core.Tests.NorthwindModels
         public TrackingState TrackingState { get; set; }
         [NotMapped]
         public ICollection<string> ModifiedProperties { get; set; }
+        [NotMapped]
+        public IDictionary<string, object> OriginalValues { get; set; }
     }
 }

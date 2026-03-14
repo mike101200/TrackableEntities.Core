@@ -1,0 +1,12 @@
+{
+  "roo.rag.chunkSize": 1400,
+  "roo.rag.chunkOverlap": 250,
+  "roo.rag.fileExtensions": [
+    ".cs",
+    ".csproj",
+    ".json",
+    ".xml",
+    ".yml",
+    ".xaml"
+  ]
+}
